@@ -130,7 +130,6 @@ func doAttachVolume(c *cli.Context) error {
 	case "ebs":
 		return doAttachEBSVolume(request, optionsMap)
 	case "vfs":
-		request.Name = optionsMap["name"]
 		return doCreateNFSVolume(request, optionsMap)
 	case "efs":
 		return nil
@@ -228,6 +227,18 @@ func doVolumeDetach(device string) error {
 }
 
 func getVolumeByProperty(key string, value string) (*api.VolumeResponse, error) {
+	vol, err := findVolumeByProperty(key, value)
+	if err != nil {
+		return nil, err
+	}
+	if vol == nil {
+		return nil, fmt.Errorf("can't find volume by DriverInfo property: key=%s, value=%s", key, value)
+	}
+
+	return vol, nil
+}
+
+func findVolumeByProperty(key string, value string) (*api.VolumeResponse, error) {
 	v := url.Values{}
 	url := "/volumes/list?" + v.Encode()
 	rc, err := sendRequest("GET", url, nil)
@@ -260,7 +271,7 @@ func getVolumeByProperty(key string, value string) (*api.VolumeResponse, error) 
 		}
 	}
 	if reflect.DeepEqual(volume, api.VolumeResponse{}) {
-		return nil, fmt.Errorf("can't find volume by DriverInfo property: key=%s, value=%s", key, value)
+		return nil, nil
 	}
 
 	return &volume, nil
@@ -271,12 +282,20 @@ func doCreateNFSVolume(request *api.VolumeCreateRequest, optionsMap map[string]s
 	if !ok {
 		return fmt.Errorf("no name option specified")
 	}
-	request.Name = name
 
-	url := "/volumes/create"
-	_, err := sendRequest("POST", url, request)
+	// check if the volume exists or not. If exists, then do nothing
+	vol, err := findVolumeByProperty("VolumeName", name)
 	if err != nil {
 		return err
+	}
+	if vol == nil {
+		request.Name = name
+
+		url := "/volumes/create"
+		_, err := sendRequest("POST", url, request)
+		if err != nil {
+			return err
+		}
 	}
 	fmt.Printf("{\"status\": \"Success\"}")
 
@@ -373,6 +392,7 @@ func doMountNFS(request *api.VolumeMountRequest, optionsMap map[string]string) e
 	}
 	request.VolumeName = name
 	request.BindMount = "rbind"
+	request.ReMount = true
 
 	url := "/volumes/mount"
 	if _, err := sendRequest("POST", url, request); err != nil {
