@@ -98,6 +98,7 @@ const (
 	OPT_FILESYSTEM            = "Filesystem"
 	OPT_READ_WRITE            = "ReadWrite"
 	OPT_BIND_MOUNT            = "BindMount"
+	OPT_REMOUNT               = "ReMount"
 )
 
 var (

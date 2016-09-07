@@ -396,6 +396,10 @@ func (s *daemon) processVolumeMount(volume *Volume, request *api.VolumeMountRequ
 	if err != nil {
 		return "", err
 	}
+	remount := ""
+	if request.ReMount {
+		remount = OPT_REMOUNT
+	}
 
 	req := Request{
 		Name: volume.Name,
@@ -403,6 +407,7 @@ func (s *daemon) processVolumeMount(volume *Volume, request *api.VolumeMountRequ
 			OPT_MOUNT_POINT: request.MountPoint,
 			OPT_READ_WRITE:  request.ReadWrite,
 			OPT_BIND_MOUNT:  request.BindMount,
+			OPT_REMOUNT:     remount,
 		},
 	}
 	log.WithFields(logrus.Fields{
