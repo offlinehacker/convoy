@@ -182,3 +182,56 @@ func (s *TestSuite) TestVolumeAndSnapshot(c *C) {
 	err = svc.DeleteVolume(volumeID1)
 	c.Assert(err, IsNil)
 }
+
+func (s *TestSuite) TestVolumeDetachFromInstance(c *C) {
+	var (
+		err  error
+		tags map[string]string
+	)
+
+	svc, err := NewEBSService()
+	c.Assert(err, IsNil)
+
+	// should contain the root device only
+	devMap, err := svc.getInstanceDevList()
+	c.Assert(err, IsNil)
+	originDevCounts := len(devMap)
+	c.Assert(originDevCounts, Not(Equals), 0)
+
+	log.Debug("Creating volume1")
+	r1Tags := map[string]string{
+		"Name": "volume1",
+	}
+	r1 := &CreateEBSVolumeRequest{
+		Size: GB,
+		Tags: r1Tags,
+	}
+	volumeID1, err := svc.CreateVolume(r1)
+	c.Assert(err, IsNil)
+	c.Assert(volumeID1, Not(Equals), "")
+	tags, err = svc.GetTags(volumeID1)
+	c.Assert(err, IsNil)
+	c.Assert(r1Tags, DeepEquals, tags)
+
+	log.Debug("Attaching volume1")
+	dev1, err := svc.AttachVolume(volumeID1, GB)
+	c.Assert(err, IsNil)
+	c.Assert(strings.HasPrefix(dev1, "/dev/"), Equals, true)
+	stat1, err := os.Stat(dev1)
+	c.Assert(err, IsNil)
+	c.Assert(stat1.Mode()&os.ModeDevice != 0, Equals, true)
+	log.Debug("Attached volume1 at ", dev1)
+
+	log.Debug("Checking state of attached instance")
+	isRunning, err := svc.IsInstanceRunning(&svc.InstanceID)
+	c.Assert(err, IsNil)
+	c.Assert(isRunning, Equals, true)
+
+	log.Debug("Detaching a volume from a specific instance")
+	err := svc.DetachVolumeFromInstance(&volumeID1, &svc.InstanceID)
+	c.Assert(err, IsNil)
+
+	log.Debug("Deleting volume1")
+	err = svc.DeleteVolume(volumeID1)
+	c.Assert(err, IsNil)
+}
