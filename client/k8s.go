@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/codegangsta/cli"
@@ -137,6 +138,9 @@ func doAttachVolume(c *cli.Context) error {
 	case "nfs":
 		request.DriverName = "vfs"
 		return doCreateVFSVolume(request, optionsMap)
+	case "devicemapper":
+		request.DriverName = "devicemapper"
+		return doCreateDeviceMapperVolume(request, optionsMap)
 	default:
 		return fmt.Errorf("unrecognized convoyDriver name specified")
 	}
@@ -306,6 +310,46 @@ func doCreateVFSVolume(request *api.VolumeCreateRequest, optionsMap map[string]s
 	return nil
 }
 
+func doCreateDeviceMapperVolume(request *api.VolumeCreateRequest, optionsMap map[string]string) error {
+	name, ok := optionsMap["name"]
+	if !ok {
+		return fmt.Errorf("no name option specified")
+	}
+
+	// check if the volume exists or not. If exists, then do nothing
+	vol, err := findVolumeByProperty("VolumeName", name)
+	if err != nil {
+		return err
+	}
+	if vol == nil {
+		request.Name = name
+
+		size, ok := optionsMap["size"]
+		if ok {
+			intSize, err := strconv.ParseInt(size, 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid volume size")
+			}
+
+			request.Size = intSize
+		}
+
+		backupUrl, ok := optionsMap["backupUrl"]
+		if ok {
+			request.BackupURL = backupUrl
+		}
+
+		url := "/volumes/create"
+		_, err := sendRequest("POST", url, request)
+		if err != nil {
+			return err
+		}
+	}
+	fmt.Printf("{\"status\": \"Success\"}")
+
+	return nil
+}
+
 func cmdMount(c *cli.Context) {
 	if err := doMount(c); err != nil {
 		fmt.Print("{\"status\": \"Failure\"}")
@@ -366,6 +410,8 @@ func doMount(c *cli.Context) error {
 		fallthrough
 	case "nfs":
 		return doMountVFS(request, optionsMap)
+	case "devicemapper":
+		return doMountDeviceMapper(request, optionsMap)
 	default:
 		return fmt.Errorf("unrecognized convoyDriver name specified")
 	}
@@ -392,6 +438,24 @@ func doMountVFS(request *api.VolumeMountRequest, optionsMap map[string]string) e
 	if !ok {
 		return fmt.Errorf("no name option specified")
 	}
+	request.VolumeName = name
+	request.BindMount = "rbind"
+	request.ReMount = true
+
+	url := "/volumes/mount"
+	if _, err := sendRequest("POST", url, request); err != nil {
+		return fmt.Errorf("Error bind mounting: %s to mountpoint: %s, err: %s", name, request.MountPoint, err)
+	}
+
+	return nil
+}
+
+func doMountDeviceMapper(request *api.VolumeMountRequest, optionsMap map[string]string) error {
+	name, ok := optionsMap["name"]
+	if !ok {
+		return fmt.Errorf("no name option specified")
+	}
+
 	request.VolumeName = name
 	request.BindMount = "rbind"
 	request.ReMount = true
